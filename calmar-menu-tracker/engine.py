@@ -756,7 +756,9 @@ def thumbs_index(args):
 #     st: "auto" (score >= 80, shown as "matched photo"), "ask" (50-79 or strain-only: owner picks),
 #         "none" (nothing close); pick/cands: {h: handle, t: title, v: vendor, s: score, src, th: data: URI}
 #     man: {h, th} a 200px picture for the owner's manual choice, filled in on the next run
-#   stores/<slug>/imagematches/overrides  {"items": {<key>: {"h": <handle> | "none", "stock": true, "at"}}}  written by
+#     Candidate pictures other than the pick live in stores/<slug>/imagecands/c-NN {"items": {<key>: {<handle>: th}}},
+#     which only the owner's photo picker loads, so the app stays light for everyone else.
+#   stores/<slug>/imagematches/overrides  {"items": {<key>: {"h": <handle> | "none", "stock": true, "th", "at"}}}  written by
 #     the page; "stock" marks a store picture that is really a generic stock image, so it gets matched too
 PLACEHOLDER = "/catalogue/categories/defaults/"
 OCS_URL = "https://ocs.ca/products.json?limit=250&page={}"
@@ -987,6 +989,73 @@ def fetch_thumb(src, width):
     return f"data:{ctype};base64," + base64.b64encode(data).decode()
 
 
+def place_items(docs, where, changed, prefix):
+    """Put changed {key: value} entries into chunk docs: each stays in its doc, new ones go to the newest doc
+    (or a new one). A value of None removes the key. Returns the doc ids that changed."""
+    size = lambda items: len(json.dumps(items, separators=(",", ":")))
+    touched = set()
+    for key, entry in changed.items():
+        did = where.get(key)
+        if entry is None:
+            if did:
+                docs[did].pop(key, None)
+                where.pop(key, None)
+                touched.add(did)
+            continue
+        if did:
+            docs[did][key] = entry
+            if size(docs[did]) > 240_000:          # grew too big: move it to the newest doc
+                del docs[did][key]
+                touched.add(did)
+                did = None
+        if not did:
+            last = sorted(docs)[-1] if docs else None
+            if last is None or size(docs[last]) + size({key: entry}) > MEDIA_CHUNK:
+                n = len(docs)
+                last = f"{prefix}{n:02d}"
+                while last in docs:
+                    n += 1
+                    last = f"{prefix}{n:02d}"
+                docs[last] = {}
+            did = last
+            docs[did][key] = entry
+            where[key] = did
+        touched.add(did)
+    return touched
+
+
+def split_cands(entry):
+    """Candidate pictures (except the pick's, which the entry keeps) go to the separate imagecands collection."""
+    pick_h = (entry.get("pick") or {}).get("h")
+    thumbs = {c["h"]: c["th"] for c in entry.get("cands") or [] if c.get("th") and c.get("h") != pick_h}
+    entry = dict(entry, cands=[{k: v for k, v in c.items() if k != "th"} for c in entry.get("cands") or []])
+    if entry.get("pick"):
+        entry["pick"] = dict(entry["pick"])
+    return entry, thumbs
+
+
+def load_chunks(folder):
+    docs = {}
+    for f in sorted(glob.glob(os.path.join(folder, "*.json"))):
+        docs[os.path.basename(f)[:-5]] = (load_json(f) or {}).get("items") or {}
+    return docs
+
+
+def chunk_writes(docs, touched, collection, folder, out, versions, tag):
+    writes = []
+    for did in sorted(touched):
+        fp = os.path.abspath(os.path.join(out, f"{tag}__{did}.json"))
+        json.dump({"items": docs[did]}, open(fp, "w"), separators=(",", ":"))
+        w = {"op": "set", "collection": collection, "doc_id": did, "file_path": fp}
+        v = versions.get(f"{collection}/{did}")
+        if v:
+            w["if_version"] = v
+        elif os.path.exists(os.path.join(folder, did + ".json")):
+            sys.exit(f"ABORT: no version for existing doc {collection}/{did} (add its list output to versions.txt)")
+        writes.append(w)
+    return writes
+
+
 def photos(args):
     """Match placeholder pictures to OCS photos and write stores/<slug>/imagematches docs (photo_batch_N.json)."""
     state = load_state(args.prev)
@@ -1028,6 +1097,7 @@ def photos(args):
             ocs = fetch_ocs(os.path.join(args.out, "ocs_catalog.json"))
             vendors = prep_ocs(ocs)
         counts = {"auto": 0, "ask": 0, "none": 0, "thumb_errors": 0}
+        rematched = set()
         for p in todo:
             stt, sc, cands = match_one(p, ocs, vendors)
             old = cache.get(p["key"]) or {}
@@ -1051,6 +1121,7 @@ def photos(args):
                 entry["man"] = old["man"]
             counts[entry["st"]] += 1
             changed[p["key"]] = entry
+            rematched.add(p["key"])
         # owner's manual choices: fetch a full-size picture for the chosen candidate once
         for key, ov in overrides.items():
             h = (ov or {}).get("h")
@@ -1065,38 +1136,21 @@ def photos(args):
                 changed[key] = e
             except Exception:
                 counts["thumb_errors"] += 1
-        # place changed entries: keep each in its doc, new ones go to the last doc (or a new one)
-        size = lambda items: len(json.dumps(items, separators=(",", ":")))
-        touched = set()
-        for key, entry in changed.items():
-            did = where.get(key)
-            if did:
-                docs[did][key] = entry
-                if size(docs[did]) > 240_000:          # grew too big: move it to the newest doc
-                    del docs[did][key]
-                    touched.add(did)
-                    did = None
-            if not did:
-                last = sorted(docs)[-1] if docs else None
-                if last is None or size(docs[last]) + size({key: entry}) > MEDIA_CHUNK:
-                    last = f"m-{len(docs):02d}"
-                    while last in docs:
-                        last = f"m-{int(last[2:]) + 1:02d}"
-                    docs[last] = {}
-                did = last
-                docs[did][key] = entry
-                where[key] = did
-            touched.add(did)
-        for did in sorted(touched):
-            fp = os.path.abspath(os.path.join(args.out, f"imagematches__{slug}__{did}.json"))
-            json.dump({"items": docs[did]}, open(fp, "w"), separators=(",", ":"))
-            w = {"op": "set", "collection": f"stores/{slug}/imagematches", "doc_id": did, "file_path": fp}
-            v = versions.get(f"stores/{slug}/imagematches/{did}")
-            if v:
-                w["if_version"] = v
-            elif os.path.exists(os.path.join(mdir, did + ".json")):
-                sys.exit(f"ABORT: no version for existing doc stores/{slug}/imagematches/{did} (add its list output to versions.txt)")
-            writes.append(w)
+        # candidate pictures move to imagecands; entries keep only what every viewer needs
+        cdir = os.path.join(args.prev or "", "stores", slug, "imagecands")
+        cdocs = load_chunks(cdir)
+        cwhere = {k: did for did, items in cdocs.items() for k in items}
+        cchanged = {}
+        for key in list(changed):
+            changed[key], thumbs = split_cands(changed[key])
+            if thumbs:
+                cchanged[key] = thumbs
+            elif key in rematched and key in cwhere:
+                cchanged[key] = None             # matched again and no other candidates now
+        touched = place_items(docs, where, changed, "m-")
+        writes += chunk_writes(docs, touched, f"stores/{slug}/imagematches", mdir, args.out, versions, f"imagematches__{slug}")
+        ctouched = place_items(cdocs, cwhere, cchanged, "c-")
+        writes += chunk_writes(cdocs, ctouched, f"stores/{slug}/imagecands", cdir, args.out, versions, f"imagecands__{slug}")
         allk = {**cache, **changed}
         live = [allk.get(p["key"]) or {} for p in prods]
         report[slug] = {"placeholders": len(prods), "checked": len(todo), "new": counts,

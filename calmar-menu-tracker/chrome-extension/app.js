@@ -13,7 +13,7 @@ const BELL = '<svg class="bell" viewBox="0 0 24 24" aria-hidden="true"><path fil
 
 /* ============ state ============ */
 const S = {
-  stores: [], storesSig: "", slug: null, meta: {}, catalogs: {}, runs: {}, subs: {}, media: {}, matches: {}, pickOpen: new Set(),
+  stores: [], storesSig: "", slug: null, meta: {}, catalogs: {}, runs: {}, subs: {}, media: {}, matches: {}, pickOpen: new Set(), cands: {}, candsSub: {},
   db: null, uid: null, isOwner: false, canSave: false, userResolved: false, mcp: null,
   watch: {items:{}}, ratings: {v:2, items:{}}, ratingsLoaded: false, attachDone: false, checkReq: null,
   view: "menu", open: new Set(), shown: 60,
@@ -101,11 +101,26 @@ function matchedPhoto(p, slug = S.slug){
   if (ov && ov.h) {
     if (ov.h === "none") return null;
     const c = (e.cands || []).find(c => c.h === ov.h);
-    const src = okData(e.man && e.man.h === ov.h ? e.man.th : null) || okData(c && c.th);
+    const src = okData(e.man && e.man.h === ov.h ? e.man.th : null) || okData(ov.th) || candThumb(p, c, slug);
     return src ? {src, how: "manual", c} : null;
   }
   if (e.st === "auto" && e.pick) { const src = okData(e.pick.th); return src ? {src, how: "auto", c: e.pick} : null; }
   return null;
+}
+function candThumb(p, c, slug = S.slug){
+  // a candidate's picture: inline (older data, the Chrome version), the pick's own, or the lazily loaded imagecands
+  if (!c) return null;
+  const e = matchEntry(p, slug) || {};
+  return okData(c.th) || (e.pick && e.pick.h === c.h ? okData(e.pick.th) : null) || okData((((S.cands[slug] || {}).items || {})[p.key] || {})[c.h]);
+}
+function loadCands(slug = S.slug){
+  // only the owner's photo picker needs these pictures, so they load on first use
+  if (S.candsSub[slug] || !S.db) return;
+  S.candsSub[slug] = true;
+  S.db.collection(`stores/${slug}/imagecands`).onSnapshot(snap => {
+    const items = {}; snap.docs.forEach(d => Object.assign(items, d.data()?.items || {}));
+    S.cands[slug] = {items, loaded: true}; render();
+  }, err => { S.cands[slug] = {items: {}, loaded: true}; render(); });
 }
 function imgSrc(p, slug = S.slug){
   const mp = matchedPhoto(p, slug); if (mp) return mp.src;
@@ -309,14 +324,13 @@ function detailHTML(p){
     ["Stock count", p.stock_qty], ["SKU", p.sku], ["First seen", day(p.first_seen)],
     ["Gone since", p.gone_since ? day(p.gone_since) : null], ["Tags", (p.tags||[]).join(", ") || null]
   ].filter(([,x]) => x != null && x !== "");
-  const hist = (p.price_history||[]).length > 1 ? `<div class="note">Price history: ${p.price_history.map(h => `${day(h[0])} ${money(h[1])}${h[2] ? " (sale " + money(h[2]) + ")" : ""}`).map(esc).join(" → ")}</div>` : "";
   const w = S.watch.items[p.key];
   const rid = ratingIdFor(p);
   const url = safeUrl(p.url);
   const big = imgSrc(p);
   return `<div class="detail"><div class="dhead">${big ? `<img class="bigimg" src="${esc(big)}" alt="${esc(p.name)}" loading="lazy">` : ""}${p.description ? `<p>${esc(p.description)}</p>` : ""}${photoInfoHTML(p)}</div>
     ${pickerHTML(p)}
-    <div class="kv">${kv.map(([k,x]) => `<div><span>${esc(k)}</span>${esc(x)}</div>`).join("")}</div>${hist}
+    <div class="kv">${kv.map(([k,x]) => `<div><span>${esc(k)}</span>${esc(x)}</div>`).join("")}</div>${priceChartHTML(p)}
     ${S.canSave ? rateBoxHTML(rid, rid ? S.ratings.items[rid] : null, p) : ""}
     <div class="actions">
       ${S.canSave ? `<button class="btn small" data-act="watch" data-key="${esc(p.key)}">${w ? "Watching ✓" : "Watch"}</button>` : ""}
@@ -348,10 +362,13 @@ function pickerHTML(p){
   if (!S.pickOpen.has(p.key) || !S.isOwner) return "";
   const e = matchEntry(p); if (!e || !(e.cands || []).length) return "";
   const ov = photoOverride(p), mp = matchedPhoto(p);
-  const cur = ov && ov.h ? ov.h : (mp ? mp.c.h : null);
+  const cur = ov && ov.h ? ov.h : (mp && mp.c ? mp.c.h : null);
+  const shown = e.cands.map(c => [c, candThumb(p, c)]);
+  const waiting = shown.some(([, src]) => !src) && !(S.cands[S.slug] || {}).loaded;
+  if (waiting) loadCands();
   return `<div class="picker" role="group" aria-label="Pick a photo"><span class="note">Pick the photo that shows this product. These come from the Ontario Cannabis Store catalog, closest match first.</span>
-    <div class="opts">${e.cands.map(c => okData(c.th) ? `<button class="pick" data-act="setphoto" data-key="${esc(p.key)}" data-h="${esc(c.h)}" aria-pressed="${cur === c.h}">
-      <img src="${esc(c.th)}" alt="" loading="lazy"><b>${esc(c.t)}</b><span>${esc(c.v)} · match ${Math.round(c.s)}%</span></button>` : "").join("")}</div>
+    <div class="opts">${shown.map(([c, src]) => src ? `<button class="pick" data-act="setphoto" data-key="${esc(p.key)}" data-h="${esc(c.h)}" aria-pressed="${cur === c.h}">
+      <img src="${esc(src)}" alt="" loading="lazy"><b>${esc(c.t)}</b><span>${esc(c.v)} · match ${Math.round(c.s)}%</span></button>` : "").join("")}${waiting ? `<span class="note">Loading photo options…</span>` : ""}</div>
     <div class="actions"><button class="btn small" data-act="setphoto" data-key="${esc(p.key)}" data-h="none" aria-pressed="${cur === "none"}">No photo</button>
       ${ov ? `<button class="btn small" data-act="setphoto" data-key="${esc(p.key)}" data-h="">Back to automatic</button>` : ""}
       <span class="saved" id="saved-ph-${esc(p.key)}"></span></div></div>`;
@@ -362,7 +379,13 @@ function setPhoto(key, h){
   const items = {...(m.overrides || {})};
   const cur = {...(items[key] || {})};
   if (h === "stock") { if (cur.stock) delete cur.stock; else cur.stock = true; }
-  else if (h) cur.h = h; else delete cur.h;
+  else if (h) {
+    cur.h = h;
+    // keep the chosen picture with the choice, so everyone sees it before the next check adds a larger one
+    const p = productByKey(key), e = p && matchEntry(p), c = e && (e.cands || []).find(c => c.h === h);
+    const th = c && candThumb(p, c);
+    if (th && h !== "none") cur.th = th; else delete cur.th;
+  } else { delete cur.h; delete cur.th; }
   cur.at = stampNow();
   if (cur.h || cur.stock) items[key] = cur; else delete items[key];
   m.overrides = items;
@@ -371,6 +394,72 @@ function setPhoto(key, h){
   S.db.doc(`stores/${S.slug}/imagematches/overrides`).set({items}).then(() => flash("ph-" + key, "Saved"))
     .catch(() => { S.checkErr = "Couldn't save the photo choice. Only the app's owner can change photos."; renderHeader(); });
 }
+/* ============ price history chart (one series: the price you'd pay; sales are labelled) ============ */
+const PCH = new Map();   // product id -> plotted points, for the hover and keyboard readout
+function priceChartHTML(p){
+  const h = (p.price_history || []).filter(x => x && x[1] != null);
+  if (h.length < 2) return h.length ? `<div class="note">Price unchanged since ${esc(day(h[0][0]))}: ${esc(money(h[0][2] || h[0][1]))}${h[0][2] ? " (on sale)" : ""}.</div>` : "";
+  const pts = h.map(([t, pr, sale]) => ({t: toDate(t).getTime(), pay: sale || pr, pr, sale}));
+  const endT = p.status === "gone" && p.gone_since ? toDate(p.gone_since).getTime() : Date.now();
+  const W = 560, H = 160, L = 52, R = 14, T = 18, B = 28;
+  const t0 = pts[0].t, t1 = Math.max(endT, pts[pts.length - 1].t + 36e5);
+  let lo = Math.min(...pts.map(q => q.pay)), hi = Math.max(...pts.map(q => q.pay));
+  const pad = Math.max((hi - lo) * 0.2, 0.5); lo = Math.max(0, lo - pad); hi += pad;
+  const x = t => L + (t - t0) / (t1 - t0) * (W - L - R), y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  pts.forEach(q => { q.x = x(q.t); q.y = y(q.pay); });
+  const xEnd = x(t1);
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${pts[i].x.toFixed(1)}V${pts[i].y.toFixed(1)}`;
+  d += `H${xEnd.toFixed(1)}`;
+  const ticks = [lo + (hi - lo) * 0.1, (lo + hi) / 2, hi - (hi - lo) * 0.1];
+  const grid = ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${esc(money(v))}</text>`).join("");
+  const endLabel = p.status === "gone" ? `gone ${day(p.gone_since)}` : "now";
+  const xl = `<text class="axis" x="${L}" y="${H - 8}">${esc(day(h[0][0]))}</text><text class="axis" x="${W - R}" y="${H - 8}" text-anchor="end">${esc(endLabel)}</text>`;
+  const dots = pts.map((q, i) => `<circle class="dot" data-i="${i}" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="4"/>${q.sale ? `<text class="salelbl" x="${q.x.toFixed(1)}" y="${(q.y - 9).toFixed(1)}" text-anchor="middle">sale</text>` : ""}`).join("");
+  PCH.set(String(p.id), {pts, W});
+  const summary = `Price went from ${money(pts[0].pay)} to ${money(pts[pts.length - 1].pay)} over ${pts.length - 1} change${pts.length > 2 ? "s" : ""}.`;
+  const rows = h.map(([t, pr, sale]) => `<tr><td>${esc(day(t))}</td><td>${esc(money(pr))}</td><td>${sale ? esc(money(sale)) : "—"}</td></tr>`).join("");
+  return `<figure class="pchart" data-pid="${esc(String(p.id))}"><figcaption>Price over time</figcaption>
+    <div class="pwrap"><svg viewBox="0 0 ${W} ${H}" role="img" tabindex="0" aria-label="${esc(summary)} Use the left and right arrow keys to read each change.">${grid}${xl}
+      <line class="xh" x1="0" x2="0" y1="${T - 6}" y2="${H - B}" visibility="hidden"/><path class="line" d="${d}"/>${dots}</svg><div class="ptip" hidden></div></div>
+    <details><summary>Price changes as a table</summary><table><thead><tr><th>Date</th><th>Price</th><th>Sale price</th></tr></thead><tbody>${rows}</tbody></table></details></figure>`;
+}
+function chartShow(fig, i){
+  const c = PCH.get(fig.dataset.pid); if (!c) return;
+  i = Math.max(0, Math.min(c.pts.length - 1, i));
+  const q = c.pts[i], svg = fig.querySelector("svg"), tip = fig.querySelector(".ptip"), xh = fig.querySelector(".xh");
+  fig.dataset.i = i;
+  xh.setAttribute("x1", q.x); xh.setAttribute("x2", q.x); xh.setAttribute("visibility", "visible");
+  fig.querySelectorAll(".dot").forEach(el => el.classList.toggle("on", +el.dataset.i === i));
+  tip.innerHTML = `<b>${esc(day(new Date(q.t).toISOString()))}</b> · ${esc(money(q.pay))}${q.sale ? ` <span class="note">sale, regular ${esc(money(q.pr))}</span>` : ""}`;
+  tip.style.left = Math.max(12, Math.min(88, q.x / c.W * 100)) + "%";
+  tip.hidden = false;
+}
+function chartHide(fig){
+  fig.querySelector(".ptip").hidden = true; fig.querySelector(".xh").setAttribute("visibility", "hidden");
+  fig.querySelectorAll(".dot.on").forEach(el => el.classList.remove("on"));
+}
+document.addEventListener("pointermove", e => {
+  const svg = e.target.closest && e.target.closest(".pchart svg"); if (!svg) return;
+  const fig = svg.closest(".pchart"), c = PCH.get(fig.dataset.pid); if (!c) return;
+  const r = svg.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * c.W;
+  let best = 0; c.pts.forEach((q, i) => { if (Math.abs(q.x - vx) < Math.abs(c.pts[best].x - vx)) best = i; });
+  chartShow(fig, best);
+});
+document.addEventListener("pointerout", e => {
+  const svg = e.target.closest && e.target.closest(".pchart svg");
+  if (svg && !svg.contains(e.relatedTarget)) chartHide(svg.closest(".pchart"));
+});
+document.addEventListener("keydown", e => {
+  const svg = e.target.closest && e.target.closest(".pchart svg"); if (!svg || !/^Arrow(Left|Right)$/.test(e.key)) return;
+  const fig = svg.closest(".pchart"), c = PCH.get(fig.dataset.pid); if (!c) return;
+  e.preventDefault();
+  const cur = fig.dataset.i != null ? +fig.dataset.i : c.pts.length;
+  chartShow(fig, cur + (e.key === "ArrowRight" ? 1 : -1));
+});
+document.addEventListener("focusin", e => { const svg = e.target.closest && e.target.closest(".pchart svg"); if (svg) { const fig = svg.closest(".pchart"), c = PCH.get(fig.dataset.pid); if (c) chartShow(fig, c.pts.length - 1); } });
+document.addEventListener("focusout", e => { const svg = e.target.closest && e.target.closest(".pchart svg"); if (svg) chartHide(svg.closest(".pchart")); });
+
 function offRowHTML(id, e){
   const o = S.open.has("r:" + id);
   return `<div class="row"><div class="rowhead">

@@ -145,6 +145,23 @@ dialog.help::backdrop{background:rgba(0,0,0,.6)}
 .pick[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
 .pick img{width:100%;aspect-ratio:1;object-fit:contain;background:var(--surface-0);border-radius:var(--radius-sm)}
 .pick b{color:var(--ink);font-weight:600}
+.pchart{margin:0;display:grid;gap:6px;max-width:640px}
+.pchart figcaption{font:500 12px/16px var(--sans);color:var(--ink-muted)}
+.pwrap{position:relative}
+.pchart svg{width:100%;height:auto;display:block;overflow:visible;touch-action:pan-y;border-radius:var(--radius-sm)}
+.pchart svg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pchart .grid{stroke:var(--border);stroke-width:1}
+.pchart .axis{fill:var(--ink-muted);font:400 11px var(--mono)}
+.pchart .line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.pchart .dot{fill:var(--accent);stroke:var(--surface-0);stroke-width:2}
+.pchart .dot.on{r:6}
+.pchart .xh{stroke:var(--ink-muted);stroke-width:1}
+.pchart .salelbl{fill:var(--ink-muted);font:500 10px var(--sans)}
+.ptip{position:absolute;top:-6px;transform:translate(-50%,-100%);background:var(--surface-2);color:var(--ink);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;font:400 12px/16px var(--sans);white-space:nowrap;pointer-events:none;z-index:2}
+.pchart details summary{cursor:pointer;font-size:12px;color:var(--ink-muted);width:max-content}
+.pchart table{border-collapse:collapse;font:400 12px/18px var(--mono);margin-top:4px}
+.pchart th{font:500 12px/16px var(--sans);color:var(--ink-muted);text-align:left;padding:2px 14px 2px 0}
+.pchart td{padding:2px 14px 2px 0;font-variant-numeric:tabular-nums}
 @media (max-width:560px){ h1,h1 select{font-size:26px;line-height:32px} .st{font-size:28px;padding:2px 4px}
   .rowmain{grid-template-columns:44px minmax(0,1fr) auto;gap:3px 10px} .thumb{width:44px;height:44px} .bigimg{width:100%;max-width:260px} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -176,7 +193,7 @@ dialog.help::backdrop{background:rgba(0,0,0,.6)}
 
     <h3>Browsing the menu</h3>
     <ul>
-      <li>The <b>Menu</b> tab lists everything in stock. Tap any product to open it: you'll see the description, a bigger picture, cannabinoid amounts, price per gram or per mg, and its price history.</li>
+      <li>The <b>Menu</b> tab lists everything in stock. Tap any product to open it: you'll see the description, a bigger picture, cannabinoid amounts and price per gram or per mg. Once its price has changed, a <b>Price over time</b> chart shows every change and sale; point at it (or tap it and use the arrow keys) to read each one.</li>
       <li>Use the <b>All categories</b> list to show one category, like Vapes, Flower, Pre-rolls or Edibles.</li>
       <li><b>New this week</b> shows only products that arrived in the last 7 days. <b>Include gone</b> also shows products that sold out or left the menu recently.</li>
       <li><b>Show more</b> at the bottom loads the next batch of products.</li>

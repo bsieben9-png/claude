@@ -6,7 +6,7 @@ This file is for extending the app later. It is published next to the page as RE
 - **The app page** (index): two tabs, Menu and Watchlist, plus a Change log reached from the footer. The Menu covers every category with its own filters (vapes live here) and sorts by best THC value by default; "Cheapest CBD" and "Cheapest CBN" sit in the Sort list. Each product carries your 1–5 star rating and notes. A "?" button in the header opens a plain-language how-to panel. It reads the artifact database live and uses the Bran Dark design system.
 - **engine.txt** (Python): fetches every store's menu from the store's product API, adds the computed fields, diffs against the last check, and writes a plan of database writes plus the email summary. Scheduled Claude runs download it, run it, and apply the writes.
 - **Chrome extension** (`chrome-extension/`): the same page and a JavaScript port of the engine, running locally in Chrome. See its README.
-- **Scheduled tasks** (Claude account): "Calmar menu check (morning)" at 8:52 AM and "(midnight)" at 12:00 AM, both emailing the summary; "(afternoon)" at 4:20 PM with no email. "(on demand)" has no schedule. The app's Check now button starts it through the Claude Code Remote connector. Every check also runs `engine.py photos` after the pictures step.
+- **Scheduled tasks** (Claude account): "Calmar menu check (morning)" at 8:52 AM and "(midnight)" at 12:00 AM, both emailing the summary; "(afternoon)" at 4:20 PM with no email. "(on demand)" has no schedule. The app's Check now button starts it through the Claude Code Remote connector. Every check also runs `engine.py photos` after the pictures step. While a Check now is running, the page asks the on-demand task how its run went (`get_trigger`, then `get_session` for the reason) every 20 seconds, so a check that fails, for example on the Claude usage limit, is reported right away instead of after 30 minutes.
 
 ## Data source
 `GET https://ecom-api.blaze.me/api/v1/products/?limit=100&offset=N&delivery_type=pickup` with header `X-Store: <site id>`.
@@ -21,9 +21,10 @@ Calmar site id: `ca9cba05-b18a-4dda-9c12-a4c5fa378083`. Other Country Cannabis s
 | `stores/<slug>` | store meta: last_run, total_listed, last_counts |
 | `stores/<slug>/catalog/chunk-NN` | `{products:[…]}`, every product plus items gone for under 90 days |
 | `stores/<slug>/runs/<stamp>` | one check's changes: new, returned, price_changes, sale_changes, removed |
-| `checks/last` | when Check now was last pressed |
+| `checks/last` | when Check now was last pressed, plus `failed`/`failed_at` when that check didn't run |
 | `stores/<slug>/imagematches/m-NN` | photo matches for placeholder pictures, keyed by product key: `{st: auto/ask/none, sc, sku, name, at, pick, cands:[{h, t, v, s, src, th}], man}`. `th` is an inline `data:` picture (200px for the pick, 120px for other candidates). |
-| `stores/<slug>/imagematches/overrides` | the owner's photo choices from the page: `{items:{<key>:{h: <OCS handle> or "none", stock: true, at}}}`. `stock` marks a store picture that is really a generic stock box (uploaded as a normal photo, so the URL check can't catch it); the matcher then treats it like a placeholder. |
+| `stores/<slug>/imagecands/c-NN` | picture options for the owner's photo picker, `{items:{<key>:{<handle>: th}}}`. Only loaded when the owner opens **Pick photo**, so the app stays light for friends. |
+| `stores/<slug>/imagematches/overrides` | the owner's photo choices from the page: `{items:{<key>:{h: <OCS handle> or "none", th, stock: true, at}}}`; `th` is the chosen picture, so everyone sees it before the next check stores a 200px one (`man`). `stock` marks a store picture that is really a generic stock box (uploaded as a normal photo, so the URL check can't catch it); the matcher then treats it like a placeholder. |
 | `stores/<slug>/media/idx-NN` | pictures: `{items:{<product key>:{src, id}}}` where `id` is an uploaded asset served at `/_blob/<id>`; or `{src, data}` with a `data:image/webp` URI in inline mode |
 | `data/users/<uid>/watchlist` | `{items:{<key>:{name,brand,added,target_price}}}` (private to each person) |
 | `data/users/<uid>/ratings` | `{v:2, items:{<id>:{stars 1–5, notes, name, brand, kind, key, match, updated}}}` (private). `id` is the product key; ratings for items not on the menu use `c:<slug>` with `match` phrases, and the page pins them to a product when exactly one matches. |
@@ -66,12 +67,13 @@ Menu search splits the query into words. Every word has to match somewhere acros
 ## Adding a store
 Add an entry to `config/stores` (slug, name, site_id, menu_url). The next check builds its baseline, and a store picker appears in the app header.
 
+Each product with a price change shows a **Price over time** chart (a step line of the price you'd pay, sales labelled, hover or arrow keys for each change, and a table view).
+
 Check times in the summary and change log are Calmar time (MDT in summer, MST in winter).
 
 ## Ideas queued for later
 - THC for products the store leaves blank (about 37 flower, pre-roll and vape items today): AGLC's albertacannabis.org can't be read automatically, so this needs another source or manual entry
 - Price comparison between stores (products share `key` across stores)
 - Watch a brand or keyword ("any new Sticky Greens cart")
-- Price-history chart per product
 - Share ratings with friends (a shared ratings path with `{self}` write rules)
 - Terpene and effect filters, if the store starts publishing terpenoids

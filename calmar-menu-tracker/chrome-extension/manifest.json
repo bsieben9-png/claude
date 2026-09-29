@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Calmar Menu Tracker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Tracks the Country Cannabis Calmar menu from your computer: best value, new arrivals, price drops, ratings, watchlist and matched product photos.",
   "action": {
     "default_title": "Open Calmar Menu Tracker",
