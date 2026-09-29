@@ -31,7 +31,17 @@ DEFAULT_STORES = [{"slug": "calmar", "name": "Calmar", "site_id": "ca9cba05-b18a
                    "menu_url": "https://shop.countrycannabisstore.ca/menu/calmar/"}]
 CHUNK_BYTES = 110_000   # stored docs are ~35% larger than compact JSON; hard limit is 256 KiB
 BATCH_BYTES = 700_000
-MT = datetime.timezone(datetime.timedelta(hours=-6))  # display only
+def mountain(now):
+    """Calmar local time for display: MDT (UTC-6) in summer, MST (UTC-7) in winter."""
+    try:
+        from zoneinfo import ZoneInfo
+        return now.astimezone(ZoneInfo("America/Edmonton")), None
+    except Exception:
+        y = now.year          # DST runs from the second Sunday of March 2 AM to the first Sunday of November 2 AM (local)
+        start = datetime.datetime(y, 3, 8 + (6 - datetime.date(y, 3, 8).weekday()) % 7, 9, tzinfo=datetime.timezone.utc)
+        end = datetime.datetime(y, 11, 1 + (6 - datetime.date(y, 11, 1).weekday()) % 7, 8, tzinfo=datetime.timezone.utc)
+        dst = start <= now < end
+        return now.astimezone(datetime.timezone(datetime.timedelta(hours=-6 if dst else -7))), ("MDT" if dst else "MST")
 
 KIND_BY_CATEGORY = [
     ("vape", "vape"), ("infused pre", "infused"), ("pre-roll", "preroll"), ("dried flower", "flower"),
@@ -980,6 +990,12 @@ def fetch_thumb(src, width):
 def photos(args):
     """Match placeholder pictures to OCS photos and write stores/<slug>/imagematches docs (photo_batch_N.json)."""
     state = load_state(args.prev)
+    if args.cur:
+        # catalog chunks this run's check just wrote (engine.py run --out): new products get matched right away
+        for f in glob.glob(os.path.join(args.cur, "stores__*__catalog__*.json")):
+            slug = os.path.basename(f).split("__")[1]
+            for p in (load_json(f) or {}).get("products") or []:
+                state["catalog"].setdefault(slug, {})[str(p["id"])] = p
     versions = read_versions(args.prev, args.versions)
     stores = state["stores_cfg"] or DEFAULT_STORES
     os.makedirs(args.out, exist_ok=True)
@@ -1115,7 +1131,8 @@ def photos(args):
 def run(args):
     now = datetime.datetime.now(datetime.timezone.utc)
     stamp = now.strftime("%Y-%m-%dT%H:%MZ")
-    local = now.astimezone(MT).strftime("%a %b %d %Y %I:%M %p MT")
+    lt, abbr = mountain(now)
+    local = lt.strftime("%a %b %d %Y %I:%M %p ") + (abbr or lt.tzname() or "MT")
     state = load_state(args.prev)
     versions = read_versions(args.prev, args.versions)
     stores = state["stores_cfg"] or DEFAULT_STORES
@@ -1273,6 +1290,7 @@ if __name__ == "__main__":
     ti.add_argument("--inline", action="store_true", help="store pictures as data: URIs instead of uploads")
     ph = sp.add_parser("photos", help="match placeholder pictures to OCS catalog photos")
     ph.add_argument("--prev"); ph.add_argument("--out", required=True); ph.add_argument("--versions")
+    ph.add_argument("--cur", help="the run command's --out folder, so products added by this check are included")
     ph.add_argument("--limit", type=int, default=150)
     a = ap.parse_args()
     {"run": run, "thumbs": thumbs, "thumbs-index": thumbs_index, "photos": photos}[a.cmd](a)

@@ -5,6 +5,7 @@ This file is for extending the app later. It is published next to the page as RE
 ## Pieces
 - **The app page** (index): two tabs, Menu and Watchlist, plus a Change log reached from the footer. The Menu covers every category with its own filters (vapes live here) and sorts by best THC value by default; "Cheapest CBD" and "Cheapest CBN" sit in the Sort list. Each product carries your 1–5 star rating and notes. A "?" button in the header opens a plain-language how-to panel. It reads the artifact database live and uses the Bran Dark design system.
 - **engine.txt** (Python): fetches every store's menu from the store's product API, adds the computed fields, diffs against the last check, and writes a plan of database writes plus the email summary. Scheduled Claude runs download it, run it, and apply the writes.
+- **Chrome extension** (`chrome-extension/`): the same page and a JavaScript port of the engine, running locally in Chrome. See its README.
 - **Scheduled tasks** (Claude account): "Calmar menu check (morning)" at 8:52 AM and "(midnight)" at 12:00 AM, both emailing the summary; "(afternoon)" at 4:20 PM with no email. "(on demand)" has no schedule. The app's Check now button starts it through the Claude Code Remote connector. Every check also runs `engine.py photos` after the pictures step.
 
 ## Data source
@@ -56,6 +57,7 @@ About 90 products only have the store's generic placeholder (`main_image` contai
 - **Decisions**: 80 or more, at least 60% word overlap, and no runner-up within 5 points means `auto`: the photo shows with a "Matched photo" badge. 50–79, or a strain-name match with an unknown brand, means `ask`: the owner gets **Pick photo** with the top 3 candidates. Anything else is `none`.
 - **Caching**: results are cached by product key (the AGLC SKU). `auto` is never redone; `ask` and `none` are re-checked after 7 days. The owner's choice (`overrides`) always wins, and "No photo" is allowed. On the next run the engine fetches a 200px picture for a hand-picked candidate (`man`).
 - The regular `thumbs` step skips placeholder pictures, since the matcher handles them.
+- `--cur W/out` (the `run` step's output folder) adds the products this check just found, so a new placeholder product is matched in the same check.
 - Output: `photo_batch_N.json` (ArtifactData batch writes, pinned with versions from `versions.txt`) and `photos_summary.md`.
 
 ## Search
@@ -63,6 +65,8 @@ Menu search splits the query into words. Every word has to match somewhere acros
 
 ## Adding a store
 Add an entry to `config/stores` (slug, name, site_id, menu_url). The next check builds its baseline, and a store picker appears in the app header.
+
+Check times in the summary and change log are Calmar time (MDT in summer, MST in winter).
 
 ## Ideas queued for later
 - THC for products the store leaves blank (about 37 flower, pre-roll and vape items today): AGLC's albertacannabis.org can't be read automatically, so this needs another source or manual entry

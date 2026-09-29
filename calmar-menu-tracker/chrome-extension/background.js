@@ -4,6 +4,7 @@ import * as E from "./engine.js";
 
 const TIMES = ["08:52", "16:20", "00:00"];          // local time on this computer
 const OCS_CACHE_HOURS = 6;
+const RETRY_MINUTES = 30;                           // after a failed check (offline, store down), wait this long to retry
 const st = chrome.storage.local;
 let running = false;
 
@@ -42,7 +43,11 @@ async function dueCheck(){
   const slugs = ((cfg && cfg.stores) || E.DEFAULT_STORES).map(s => s.slug);
   const metas = await st.get(slugs.map(s => "stores/" + s));
   const last = Math.min(...slugs.map(s => { const m = metas["stores/" + s]; return m && m.last_run ? new Date(m.last_run.replace("Z", ":00Z")).getTime() : 0; }));
-  if (last < lastSlot().getTime()) runAll("scheduled");
+  const slot = lastSlot().getTime();
+  if (last >= slot) return;
+  const tried = (await get("last_attempt")) || 0;
+  if (Date.now() - tried < RETRY_MINUTES * 60e3) return;
+  runAll("scheduled", slot);
 }
 
 async function seedIfEmpty(){
@@ -62,9 +67,10 @@ async function getOCS(){
   return list;
 }
 
-async function runAll(why){
+async function runAll(why, slot = 0){
   if (running) return;
   running = true;
+  await st.set({last_attempt: Date.now()});
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), 20000);   // long checks keep the worker awake
   const notes = [];
   try {
@@ -102,10 +108,15 @@ async function runAll(why){
     }
     notify(out, why, notes);
   } catch (e) {
+    let msg = e.message || String(e);
+    if (/fetch|network|HTTP 5\d\d/i.test(msg)) msg = "couldn't reach the store's online menu (no internet, or the store's site is down).";
     const cur = (await get("checks/last")) || {};
-    await st.set({"checks/last": {...cur, failed: e.message || String(e), failed_at: E.stampOf()}});
+    await st.set({"checks/last": {...cur, failed: msg, failed_at: E.stampOf()}});
+    // one notification per missed check time (retries while offline stay quiet); always for Check now
+    if (why === "scheduled" && (await get("failed_slot")) === slot) return;
+    await st.set({failed_slot: slot});
     chrome.notifications.create({type: "basic", iconUrl: "icons/icon128.png", title: "Calmar menu check failed",
-      message: (e.message || String(e)).slice(0, 200) + " It will try again at the next scheduled time."});
+      message: `The check ${msg.slice(0, 200)} It tries again every ${RETRY_MINUTES} minutes.`});
   } finally {
     clearInterval(keepAlive);
     running = false;

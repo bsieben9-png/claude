@@ -43,8 +43,6 @@ const when = st => { const d = st && toDate(st); return d && !isNaN(d) ? d.toLoc
 const stampNow = () => new Date().toISOString().slice(0,16) + "Z";
 const daysAgo = n => new Date(Date.now() - n*864e5).toISOString().slice(0,16) + "Z";
 const norm = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
-const slugify = s => norm(s).replace(/ /g,"-").slice(0,120) || "item";
-const starsText = n => n ? "★".repeat(n) + "☆".repeat(5-n) : "";
 
 /* ============ search: every word must match somewhere (any order), with synonyms and small typos ============ */
 const PHRASES = [[/\bpre\s+rolls?\b/g, "preroll"], [/\bsoft\s+chews?\b/g, "gummy"]];
@@ -137,8 +135,6 @@ function valueOf(p, metric = "thc", per10 = PER10.has(p.kind)){
   return v == null ? null : (metric !== "gram" && per10 ? v / 10 : v);
 }
 function valueUnit(metric, per10){ return metric === "gram" ? "/g" : `${per10 ? "/10mg" : "/100mg"} ${METRICS[metric].label}`; }
-function thcValue(p){ return valueOf(p, "thc"); }
-function thcValueUnit(p){ return valueUnit("thc", PER10.has(p.kind)); }
 const mg = v => v == null ? "" : `${v >= 100 ? Math.round(v) : +Number(v).toFixed(1)} mg`;
 function cannMeta(p){
   // per-package amounts for packaged goods; concentrations + minor cannabinoids for smokables/vapes
@@ -207,8 +203,7 @@ function buildRatingIndex(){
     const hit = loose.find(([, e]) => (!e.kind || e.kind === p.kind) && e.match.every(m => text.includes(norm(m))));
     if (hit) prodMatch.set(p.key, hit[0]);
   }
-  const attached = new Set(prodMatch.values());
-  RIDX = {prodMatch, attached};
+  RIDX = {prodMatch};
 }
 function ratingIdFor(p){ if (!RIDX) buildRatingIndex(); return RIDX.prodMatch.get(p.key) || null; }
 function ratingFor(p){ const id = ratingIdFor(p); return id ? S.ratings.items[id] : null; }
@@ -271,10 +266,10 @@ function priceHTML(p){
   const le = m === "thc" && p.thc_est ? "≤" : "";
   return `${p.sale_price ? `<s>${money(p.price)}</s>${money(p.sale_price)}` : money(p.price)}${v != null ? `<small>${le}${money(v)}${valueUnit(m, per10).replace(" THC","")}${le ? " est." : ""}</small>` : ""}`;
 }
-function rowHTML(p, opt = {}){
+function rowHTML(p){
   const o = S.open.has(p.id);
-  const meta = opt.meta || defaultMeta(p);
-  const right = opt.right || priceHTML(p);
+  const meta = defaultMeta(p);
+  const right = priceHTML(p);
   const w = watched(p.key);
   return `<div class="row"><div class="rowhead">
     <button class="rowmain" data-act="toggle" data-id="${p.id}" aria-expanded="${o}">
@@ -282,7 +277,6 @@ function rowHTML(p, opt = {}){
       <span class="nm">${esc(p.name)}${pills(p)}<span class="br">${esc(p.brand||"")}</span></span>
       <span class="price">${right}</span>
       <span class="meta">${meta.filter(Boolean).map(m => `<span>${typeof m === "object" ? m.h : esc(m)}</span>`).join("")}</span>
-      ${opt.bar != null ? `<span class="bar" style="width:${Math.max(4, Math.min(100, opt.bar))}%"></span>` : ""}
     </button>
     ${S.canSave ? `<button class="watchbtn" data-act="watch" data-key="${esc(p.key)}" aria-pressed="${w}" title="${w ? "Watching: tap to stop" : "Watch for price drops and restocks"}" aria-label="${w ? "Stop watching" : "Watch"} ${esc(p.name)}">${BELL}</button>` : ""}
   </div>${o ? detailHTML(p) : ""}</div>`;
@@ -393,7 +387,7 @@ function listHTML(rows, opt = {}){
   if (!rows.length && !extra.length) return `<div class="empty">${esc(opt.empty || "No products match these filters.")}</div>`;
   const shown = rows.slice(0, S.shown);
   return `<div class="count">${rows.length} product${rows.length === 1 ? "" : "s"}${extra.length ? ` + ${extra.length} rated item${extra.length>1?"s":""} not on the menu` : ""}${opt.countNote ? " · " + opt.countNote : ""}</div>
-    <div class="list" style="margin-top:8px">${shown.map(p => rowHTML(p, opt.row ? opt.row(p) : {})).join("")}${rows.length <= S.shown ? extra.join("") : ""}</div>
+    <div class="list" style="margin-top:8px">${shown.map(p => rowHTML(p)).join("")}${rows.length <= S.shown ? extra.join("") : ""}</div>
     ${rows.length > S.shown ? `<div style="display:flex;justify-content:center;margin-top:10px"><button class="btn more" data-act="more">Show ${Math.min(100, rows.length - S.shown)} more</button></div>` : ""}`;
 }
 function sorter(s){
@@ -617,9 +611,8 @@ function productFromEl(el){ const pid = el.dataset.pid; return pid ? products().
 
 /* ============ events ============ */
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-view],[data-act],[data-seg]"); if (!t) return;
+  const t = e.target.closest("[data-view],[data-act]"); if (!t) return;
   if (t.dataset.view) { S.view = t.dataset.view; S.shown = 60; try { localStorage.setItem("ccs.view", S.view); } catch(_) {} render(true); window.scrollTo({top:0}); return; }
-  if (t.dataset.seg) { S.f[t.dataset.seg] = t.dataset.v; S.shown = 60; render(true); return; }
   const a = t.dataset.act, key = t.dataset.key, id = t.dataset.id;
   if (a === "toggle") { const k = /^r:/.test(id) ? id : Number(id); S.open.has(k) ? S.open.delete(k) : S.open.add(k); render(true); }
   else if (a === "more") { S.shown += 100; render(true); }
@@ -676,9 +669,9 @@ helpDlg.addEventListener("click", e => { if (e.target === helpDlg) helpDlg.close
 $("#checkNow").addEventListener("click", async () => {
   if (S.firing) return;
   S.checkErr = null; S.firing = true; renderHeader();
+  const req = {requested_at: stampNow()};   // stamped before starting, so a fast check can't finish "before" it
   try {
     await S.mcp.callTool("Claude Code Remote", "fire_trigger", {trigger_id: S.triggerId || CHECK_TRIGGER}, {cache: false});
-    const req = {requested_at: stampNow()};
     S.checkReq = req;
     try { await S.db.doc("checks/last").set(req); } catch(_) {}
   } catch (err) {
@@ -738,6 +731,7 @@ render(true);
     const x = d.data();
     S.checkReq = x || S.checkReq;
     if (x && x.failed && x.failed_at && x.failed_at >= (x.requested_at || "")) { S.checkErr = `The last check failed: ${x.failed}`; S.checkReq = null; }
+    else if (S.checkErr && S.checkErr.startsWith("The last check failed")) S.checkErr = null;   // a later check worked
     renderHeader();
   });
   if (S.uid) {
