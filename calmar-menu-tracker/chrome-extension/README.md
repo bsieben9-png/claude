@@ -3,10 +3,10 @@
 The same app as the claude.ai version, running entirely on your computer. Checks run from Chrome, so they don't use any Claude usage and can't hit a limit.
 
 ## Install (Windows 11, Chrome)
-1. Unzip `calmar-menu-tracker-chrome.zip` somewhere permanent, like `Documents\Calmar Menu Tracker`. Chrome loads the extension from that folder, so don't delete or move it.
+1. Right-click `Calmar Menu Tracker.zip` → **Extract All** and keep the folder somewhere permanent, like Documents. Chrome loads the extension from that folder, so don't delete or move it.
 2. In Chrome, go to `chrome://extensions`.
 3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and choose the unzipped folder (the one containing `manifest.json`).
+4. Click **Load unpacked** and choose the extracted **Calmar Menu Tracker** folder.
 5. Click the puzzle-piece icon in the toolbar and pin **Calmar Menu Tracker**. Clicking its icon opens the app.
 
 On first install it loads a copy of the menu, change log, matched photos and your ratings from the claude.ai app, then checks the live menu.
