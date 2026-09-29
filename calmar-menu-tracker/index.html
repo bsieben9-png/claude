@@ -239,6 +239,7 @@ dialog.help::backdrop{background:rgba(0,0,0,.6)}
     <ul>
       <li>Some products only have the store's plain placeholder picture. For those, the app looks for the real product photo in the Ontario Cannabis Store's public catalog.</li>
       <li>A photo it's confident about is shown with a <span class="pill p-match">Matched photo</span> badge when you open the product. It's the same product but might be a slightly different pack size.</li>
+      <li>If the store's own picture is just a generic stock box, the owner can tap <b>Store photo is just a stock image?</b> and the next check looks for the real photo.</li>
       <li>When it isn't sure, the owner sees a <b>Pick photo</b> button with up to three likely photos to choose from, plus <b>No photo</b>. The owner can also change or undo any matched photo.</li>
     </ul>
 
@@ -340,8 +341,9 @@ function isNew(p){ return p.status !== "gone" && (p.first_seen||"") >= daysAgo(7
 function watched(key){ return !!S.watch.items[key]; }
 /* ============ matched photos (placeholder pictures replaced with an OCS catalog photo) ============ */
 const PLACEHOLDER = "/catalogue/categories/defaults/";
-function isPlaceholder(p){ return !!p && (p.image || "").includes(PLACEHOLDER); }
-function matchEntry(p, slug = S.slug){ return isPlaceholder(p) ? ((S.matches[slug] || {}).items || {})[p.key] || null : null; }
+function isStockFlagged(p, slug = S.slug){ return !!(((S.matches[slug] || {}).overrides || {})[p.key] || {}).stock; }
+function isPlaceholder(p, slug = S.slug){ return !!p && ((p.image || "").includes(PLACEHOLDER) || isStockFlagged(p, slug)); }
+function matchEntry(p, slug = S.slug){ return isPlaceholder(p, slug) ? ((S.matches[slug] || {}).items || {})[p.key] || null : null; }
 function photoOverride(p, slug = S.slug){ return ((S.matches[slug] || {}).overrides || {})[p.key] || null; }
 const okData = u => typeof u === "string" && /^data:image\/(webp|jpeg|png|gif);base64,/.test(u) ? u : null;
 function matchedPhoto(p, slug = S.slug){
@@ -579,7 +581,14 @@ function detailHTML(p){
     </div></div>`;
 }
 function photoInfoHTML(p){
-  const e = matchEntry(p); if (!e) return "";
+  const e = matchEntry(p);
+  if (!e) {
+    // stores sometimes upload a generic "stock photo" box as a normal picture: the owner can flag it for matching
+    if (!S.isOwner || !S.db || !(CANNABIS.has(p.kind) || p.kind === "seed") || (p.image || "").includes(PLACEHOLDER)) return "";
+    return isStockFlagged(p)
+      ? `<div class="photoinfo"><span>Marked as a stock photo. The next menu check looks for the real one.</span><button class="linkbtn" data-act="markstock" data-key="${esc(p.key)}">Undo</button></div>`
+      : `<div class="photoinfo"><button class="linkbtn" data-act="markstock" data-key="${esc(p.key)}">Store photo is just a stock image? Find the real one</button></div>`;
+  }
   const mp = matchedPhoto(p), ov = photoOverride(p);
   const hasCands = (e.cands || []).length > 0;
   const canPick = S.isOwner && S.db && hasCands;
@@ -607,9 +616,13 @@ function setPhoto(key, h){
   if (!S.isOwner || !S.db) return;
   const m = S.matches[S.slug] || (S.matches[S.slug] = {items: {}, overrides: {}});
   const items = {...(m.overrides || {})};
-  if (h) items[key] = {h, at: stampNow()}; else delete items[key];
+  const cur = {...(items[key] || {})};
+  if (h === "stock") { if (cur.stock) delete cur.stock; else cur.stock = true; }
+  else if (h) cur.h = h; else delete cur.h;
+  cur.at = stampNow();
+  if (cur.h || cur.stock) items[key] = cur; else delete items[key];
   m.overrides = items;
-  if (h) S.pickOpen.delete(key);
+  if (h && h !== "stock") S.pickOpen.delete(key);
   render(true);
   S.db.doc(`stores/${S.slug}/imagematches/overrides`).set({items}).then(() => flash("ph-" + key, "Saved"))
     .catch(() => { S.checkErr = "Couldn't save the photo choice. Only the app's owner can change photos."; renderHeader(); });
@@ -863,6 +876,7 @@ document.addEventListener("click", e => {
   else if (a === "watch") toggleWatch(key);
   else if (a === "pickphoto") { S.pickOpen.has(key) ? S.pickOpen.delete(key) : S.pickOpen.add(key); render(true); }
   else if (a === "setphoto") setPhoto(key, t.dataset.h);
+  else if (a === "markstock") setPhoto(key, "stock");
   else if (a === "clearfacets") { S.f.facets = {}; S.shown = 60; const box = t.closest("#facetbox"); if (box) box.innerHTML = ""; render(true); }
   else if (a === "stars") {
     if (!S.canSave) return;

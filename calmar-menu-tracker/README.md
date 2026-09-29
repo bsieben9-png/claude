@@ -22,7 +22,7 @@ Calmar site id: `ca9cba05-b18a-4dda-9c12-a4c5fa378083`. Other Country Cannabis s
 | `stores/<slug>/runs/<stamp>` | one check's changes: new, returned, price_changes, sale_changes, removed |
 | `checks/last` | when Check now was last pressed |
 | `stores/<slug>/imagematches/m-NN` | photo matches for placeholder pictures, keyed by product key: `{st: auto/ask/none, sc, sku, name, at, pick, cands:[{h, t, v, s, src, th}], man}`. `th` is an inline `data:` picture (200px for the pick, 120px for other candidates). |
-| `stores/<slug>/imagematches/overrides` | the owner's photo choices from the page: `{items:{<key>:{h: <OCS handle> or "none", at}}}` |
+| `stores/<slug>/imagematches/overrides` | the owner's photo choices from the page: `{items:{<key>:{h: <OCS handle> or "none", stock: true, at}}}`. `stock` marks a store picture that is really a generic stock box (uploaded as a normal photo, so the URL check can't catch it); the matcher then treats it like a placeholder. |
 | `stores/<slug>/media/idx-NN` | pictures: `{items:{<product key>:{src, id}}}` where `id` is an uploaded asset served at `/_blob/<id>`; or `{src, data}` with a `data:image/webp` URI in inline mode |
 | `data/users/<uid>/watchlist` | `{items:{<key>:{name,brand,added,target_price}}}` (private to each person) |
 | `data/users/<uid>/ratings` | `{v:2, items:{<id>:{stars 1–5, notes, name, brand, kind, key, match, updated}}}` (private). `id` is the product key; ratings for items not on the menu use `c:<slug>` with `match` phrases, and the page pins them to a product when exactly one matches. |

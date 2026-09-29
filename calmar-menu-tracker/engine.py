@@ -746,7 +746,8 @@ def thumbs_index(args):
 #     st: "auto" (score >= 80, shown as "matched photo"), "ask" (50-79 or strain-only: owner picks),
 #         "none" (nothing close); pick/cands: {h: handle, t: title, v: vendor, s: score, src, th: data: URI}
 #     man: {h, th} a 200px picture for the owner's manual choice, filled in on the next run
-#   stores/<slug>/imagematches/overrides  {"items": {<key>: {"h": <handle> | "none", "at"}}}  written by the page
+#   stores/<slug>/imagematches/overrides  {"items": {<key>: {"h": <handle> | "none", "stock": true, "at"}}}  written by
+#     the page; "stock" marks a store picture that is really a generic stock image, so it gets matched too
 PLACEHOLDER = "/catalogue/categories/defaults/"
 OCS_URL = "https://ocs.ca/products.json?limit=250&page={}"
 MATCH_AUTO, MATCH_ASK = 80, 50
@@ -981,7 +982,8 @@ def photos(args):
         where = {k: did for did, items in docs.items() for k in items}
         cache = {k: docs[did][k] for k, did in where.items()}
         prods = [p for p in state["catalog"].get(slug, {}).values()
-                 if p.get("status") != "gone" and is_placeholder(p) and p.get("kind") in MATCH_KINDS]
+                 if p.get("status") != "gone" and p.get("kind") in MATCH_KINDS
+                 and (is_placeholder(p) or (overrides.get(p["key"]) or {}).get("stock"))]
         todo = [p for p in prods if not cache.get(p["key"])
                 or (cache[p["key"]].get("st") in ("none", "ask") and (cache[p["key"]].get("at") or "") < recheck)]
         todo = list({p["key"]: p for p in todo}.values())[: args.limit]
