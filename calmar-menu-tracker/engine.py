@@ -817,7 +817,25 @@ def sizes(s):
     return out
 
 
+OCS_SUBCAT = {"pre-rolls": "preroll", "dried flower": "flower", "seeds": "seed", "510 thread cartridges": "vape",
+              "disposable pens": "vape", "soft chews": "edible", "chocolates": "edible", "baked goods": "edible",
+              "hard edibles": "edible", "pantry": "edible", "beverages": "beverage", "capsules": "ingestible",
+              "oils": "ingestible", "sublingual strips": "ingestible", "distillates": "extract", "hash and kief": "extract",
+              "isolates": "extract", "resin": "extract", "rosin": "extract", "shatter": "extract", "wax": "extract",
+              "bath and shower": "topical", "creams and lotions": "topical", "intimacy oils": "topical",
+              "transdermal": "topical", "vaporizers": "accessory", "bongs pipes and rigs": "accessory",
+              "grinders": "accessory", "rolling papers cones and filters": "accessory"}
+
+
 def ocs_kind(o):
+    # OCS files pre-rolls under "Flower" and beverages under "Edibles"; the subcategory tag is the real format
+    for t in (o.get("tags") or []) if isinstance(o.get("tags"), list) else []:
+        if t.lower().startswith("subcategory--"):
+            k = OCS_SUBCAT.get(t[13:].strip().lower())
+            if k:
+                if k == "preroll" and re.search(r"infused", o.get("title") or "", re.I):
+                    return "infused"
+                return k
     tags = o.get("tags") or []
     tags = " ".join(tags) if isinstance(tags, list) else str(tags)
     for text in (o.get("product_type") or "", o.get("title") or "", tags):
@@ -924,9 +942,11 @@ def match_one(p, ocs, vendors):
     scored.sort(key=lambda x: -x[0])
     cands, seen = [], set()
     for sc, dice, o in scored:
-        if o["src"] in seen:
+        same = (o["_vf"], " ".join(toks(o["t"])))     # OCS sometimes lists one product twice
+        if o["src"] in seen or same in seen:
             continue
         seen.add(o["src"])
+        seen.add(same)
         cands.append((sc, dice, o))
         if len(cands) == 3:
             break

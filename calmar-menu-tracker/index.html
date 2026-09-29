@@ -301,7 +301,7 @@ const PHRASES = [[/\bpre\s+rolls?\b/g, "preroll"], [/\bsoft\s+chews?\b/g, "gummy
 const SYN = {prerolls:"preroll", joint:"preroll", joints:"preroll", cart:"cart", carts:"cart", cartridge:"cart", cartridges:"cart", "510":"cart",
   gummy:"gummy", gummies:"gummy", chew:"gummy", chews:"gummy", disty:"distillate", distillates:"distillate"};
 function searchTokens(s){
-  let t = norm(s);
+  let t = norm(String(s ?? "").replace(/['’`]/g, ""));   // shred'ems = shredems
   for (const [rx, to] of PHRASES) t = t.replace(rx, to);
   return t ? t.split(" ").map(w => SYN[w] || w) : [];
 }
