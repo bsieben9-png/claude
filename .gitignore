@@ -1,3 +1,4 @@
 # personal data (ratings) travels only in the downloaded zip
 calmar-menu-tracker/chrome-extension/seed.json
 Calmar Menu Tracker.zip
+__pycache__/
