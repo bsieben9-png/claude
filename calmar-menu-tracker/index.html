@@ -210,6 +210,7 @@ dialog.help::backdrop{background:rgba(0,0,0,.6)}
     <h3>Searching</h3>
     <ul>
       <li>Type a few words in any order, like <kbd>blue dream preroll</kbd> or <kbd>spinach vape</kbd>. Every word has to match somewhere in the name, brand, SKU, category or strain type.</li>
+      <li>Search always looks through every category at once, so you see all the vapes, pre-rolls, flower and edibles that fit. To narrow it down, pick a category after you type.</li>
       <li>Common ways of saying the same thing all work: pre-roll, pre roll, preroll and joint; cart, cartridge and 510; gummy, gummies and soft chew; disty and distillate.</li>
       <li>Small typos are forgiven, so <kbd>gumy</kbd> still finds gummies.</li>
     </ul>
@@ -907,6 +908,8 @@ document.addEventListener("input", e => {
   if (t.dataset.facet) { S.f.facets[t.dataset.facet] = t.value; S.shown = 60; render(true); return; }
   const map = {"f-q":"q","f-kind":"kind","f-sort":"sort","f-fresh":"fresh","f-gone":"gone","f-rated":"rated","f-chHide":"chHide"};
   if (map[t.id]) {
+    // starting a search looks across every category; a category picked afterwards narrows it
+    if (t.id === "f-q" && !S.f.q.trim() && t.value.trim()) { S.f.kind = ""; S.f.facets = {}; }
     S.f[map[t.id]] = t.type === "checkbox" ? t.checked : t.value;
     if (t.id === "f-kind") { S.f.facets = {}; }
     S.shown = 60; render(true); return;

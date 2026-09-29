@@ -657,6 +657,8 @@ document.addEventListener("input", e => {
   if (t.dataset.facet) { S.f.facets[t.dataset.facet] = t.value; S.shown = 60; render(true); return; }
   const map = {"f-q":"q","f-kind":"kind","f-sort":"sort","f-fresh":"fresh","f-gone":"gone","f-rated":"rated","f-chHide":"chHide"};
   if (map[t.id]) {
+    // starting a search looks across every category; a category picked afterwards narrows it
+    if (t.id === "f-q" && !S.f.q.trim() && t.value.trim()) { S.f.kind = ""; S.f.facets = {}; }
     S.f[map[t.id]] = t.type === "checkbox" ? t.checked : t.value;
     if (t.id === "f-kind") { S.f.facets = {}; }
     S.shown = 60; render(true); return;
